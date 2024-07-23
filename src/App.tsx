@@ -1,63 +1,131 @@
-import './App.css'
-import {useState} from "react";
+import { useState } from "react";
+import reactLogo from "./assets/react.svg";
+import "./App.css";
+import { Effect, pipe } from "effect";
 
-type ImageSize = { width: number, height: number }
-type FileStatus = { _tag: 'Not Selected' } | { _tag: 'Not Image' } | { _tag: 'File Error' } | {
-    _tag: 'Selected',
-    src: string,
-    size: ImageSize
+// 타입 정의
+type ImageSize = { width: number; height: number };
+type FileStatus =
+    | { _tag: "NotSelected" }
+    | { _tag: "NotImage" }
+    | { _tag: "FileError" }
+    | { _tag: "Selected"; size: ImageSize };
+
+// 파일 읽기 오류 클래스
+class ErrorOfReadingFile {
+    readonly _tag = "ErrorOfReadingFile";
 }
 
+// 이미지 로드 오류 클래스
+class ErrorOfLoadingImage {
+    readonly _tag = "ErrorOfLoadingImage";
+}
+
+// 파일을 읽어서 데이터 URL을 반환하는 함수
+const readFile = (file: File) =>
+    Effect.tryPromise({
+        try: () => {
+            const reader = new FileReader();
+            return new Promise<string>((resolve, reject) => {
+                reader.onload = () => resolve(reader.result as string);
+                reader.onerror = (e) => reject(e);
+                reader.readAsDataURL(file);
+            });
+        },
+        catch: () => new ErrorOfReadingFile(),
+    });
+
+// 데이터 URL을 로드해서 이미지 객체를 반환하는 함수
+const loadImage = (dataUrl: string) =>
+    Effect.tryPromise({
+        try: () => {
+            const img = new Image();
+            return new Promise<HTMLImageElement>((resolve, reject) => {
+                img.onload = () => resolve(img);
+                img.onerror = (e) => reject(e);
+                img.src = dataUrl;
+            });
+        },
+        catch: () => new ErrorOfLoadingImage(),
+    });
+
+// 이미지 크기를 반환하는 함수
+const getImageSize = ({ width, height }: HTMLImageElement): ImageSize => ({
+    width,
+    height,
+});
+
+// 파일에서 이미지 크기를 얻는 프로그램
+const createImageSizeProgram = (file: File) =>
+    pipe(
+        Effect.succeed(file),
+        Effect.flatMap(readFile),
+        Effect.flatMap(loadImage),
+        Effect.map(getImageSize)
+    );
+
+// React 컴포넌트
 function App() {
-    const [status, setStatus] = useState<FileStatus>({_tag: 'Not Selected'})
+    const [count, setCount] = useState(0);
+    const [status, setStatus] = useState<FileStatus>({ _tag: "NotSelected" });
 
-    const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0]
-        if (file === undefined) {
-            return setStatus({_tag: 'Not Selected'})
+    // 파일 선택 핸들러
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) {
+            setStatus({ _tag: "NotSelected" });
+            return;
         }
 
-        const reader = new FileReader()
+        const program = pipe(
+            createImageSizeProgram(file),
+            Effect.map((size) => ({ _tag: "Selected", size } as const)),
+            Effect.catchTags({
+                ErrorOfReadingFile: () =>
+                    Effect.succeed({ _tag: "FileError" } as const),
+                ErrorOfLoadingImage: () =>
+                    Effect.succeed({ _tag: "NotImage" } as const),
+            })
+        );
 
-        reader.onload = () => {
-            const image = new Image()
-            image.onload = () => {
-                setStatus({
-                    _tag: 'Selected',
-                    size: {width: image.width, height: image.height},
-                    src: reader.result as string
-                })
-            }
-            image.onerror = () => {
-                setStatus({_tag: 'Not Image'})
-            }
-            image.src = reader.result as string
-        }
-        reader.onerror = () => {
-            setStatus({_tag: 'File Error'})
-        }
-
-        reader.readAsDataURL(file)
-    }
+        const result = await Effect.runPromise(program);
+        setStatus(result);
+    };
 
     return (
-        <>
-            <h1>Vite + React</h1>
-            <div className="card">
-                <p>
-                    {status._tag === 'Not Selected' && 'Please select a file'}
-                    {status._tag === 'Not Image' && 'Please select an image'}
-                    {status._tag === 'File Error' && 'File loading error'}
-                    {status._tag === 'Selected' && `Image size: ${status.size.width}x${status.size.height} px`}
-                </p>
-                {status._tag === 'Selected' &&  <img alt='불러온 이미지' src={status.src}  width={Math.min(status.size.width, 400)} height={Math.min(500,status.size.height)}/>}
+        <div className="App">
+            <div>
+                <a href="https://vitejs.dev" target="_blank">
+                    <img src="/vite.svg" className="logo" alt="Vite logo" />
+                </a>
+                <a href="https://reactjs.org" target="_blank">
+                    <img src={reactLogo} className="logo react" alt="React logo" />
+                </a>
             </div>
-            <input type='file' onChange={handleImageChange} multiple={false}/>
+            <h1>Vite + React</h1>
+            <div>
+                <input type="file" onChange={handleFileChange} />
+            </div>
+            <div>
+                {status._tag === "NotSelected" && "파일이 선택되지 않았습니다."}
+                {status._tag === "NotImage" && "이미지 파일이 아닙니다."}
+                {status._tag === "FileError" && "파일을 읽는 중에 에러가 발생했습니다."}
+                {status._tag === "Selected" &&
+                    `이미지 크기: ${status.size.width}x${status.size.height}`}
+            </div>
+            <div className="card">
+                <button onClick={() => setCount((count) => count + 1)}>
+                    count is {count}
+                </button>
+                <p>
+                    Edit <code>src/App.tsx</code> and save to test HMR
+                </p>
+            </div>
             <p className="read-the-docs">
                 Click on the Vite and React logos to learn more
             </p>
-        </>
-    )
+        </div>
+    );
 }
 
-export default App
+export default App;
