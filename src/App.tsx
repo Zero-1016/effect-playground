@@ -1,37 +1,58 @@
-import {useState} from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
 import './App.css'
-import {Console, Effect} from "effect";
+import {useState} from "react";
 
-const program = Console.log("Hello, World!")
+type ImageSize = { width: number, height: number }
+type FileStatus = { _tag: 'Not Selected' } | { _tag: 'Not Image' } | { _tag: 'File Error' } | {
+    _tag: 'Selected',
+    src: string,
+    size: ImageSize
+}
 
 function App() {
-    const [count, setCount] = useState(0)
+    const [status, setStatus] = useState<FileStatus>({_tag: 'Not Selected'})
 
-    const handleClickCounter = () => {
-        setCount((count) => count + 1)
-        Effect.runSync(program)
+    const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]
+        if (file === undefined) {
+            return setStatus({_tag: 'Not Selected'})
+        }
+
+        const reader = new FileReader()
+
+        reader.onload = () => {
+            const image = new Image()
+            image.onload = () => {
+                setStatus({
+                    _tag: 'Selected',
+                    size: {width: image.width, height: image.height},
+                    src: reader.result as string
+                })
+            }
+            image.onerror = () => {
+                setStatus({_tag: 'Not Image'})
+            }
+            image.src = reader.result as string
+        }
+        reader.onerror = () => {
+            setStatus({_tag: 'File Error'})
+        }
+
+        reader.readAsDataURL(file)
     }
+
     return (
         <>
-            <div>
-                <a href="https://vitejs.dev" target="_blank">
-                    <img src={viteLogo} className="logo" alt="Vite logo"/>
-                </a>
-                <a href="https://react.dev" target="_blank">
-                    <img src={reactLogo} className="logo react" alt="React logo"/>
-                </a>
-            </div>
             <h1>Vite + React</h1>
             <div className="card">
-                <button onClick={handleClickCounter}>
-                    count is {count}
-                </button>
                 <p>
-                    Edit <code>src/App.tsx</code> and save to test HMR
+                    {status._tag === 'Not Selected' && 'Please select a file'}
+                    {status._tag === 'Not Image' && 'Please select an image'}
+                    {status._tag === 'File Error' && 'File loading error'}
+                    {status._tag === 'Selected' && `Image size: ${status.size.width}x${status.size.height} px`}
                 </p>
+                {status._tag === 'Selected' &&  <img alt='불러온 이미지' src={status.src}  width={Math.min(status.size.width, 400)} height={Math.min(500,status.size.height)}/>}
             </div>
+            <input type='file' onChange={handleImageChange} multiple={false}/>
             <p className="read-the-docs">
                 Click on the Vite and React logos to learn more
             </p>
